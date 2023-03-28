@@ -1,4 +1,4 @@
-name: "Reactivate"
+name: "Reactivate Repository"
 description: "GitHub action to prevent GitHub from suspending cronjob based triggers due to repository inactivity."
 
 branding:
