@@ -1,0 +1,66 @@
+name: "Reactivate"
+description: "GitHub action to prevent GitHub from suspending cronjob based triggers due to repository inactivity."
+
+branding:
+  icon: "refresh-cw"
+  color: "gray-dark"
+  
+inputs:
+  commit_message:
+    description: "Commit message used while committing to the repository."
+    default: "github-actions: Reactivate repository"
+    required: false
+  committer_username:
+    description: "Username used while committing to the repository."
+    default: "GitHub Actions [Bot]"
+    required: false
+  committer_email:
+    description: "Email used while committing to the repository."
+    default: "github-actions[bot]@users.noreply.github.com"
+    required: false
+  days_elapsed:
+    description: "Time elapsed from the last commit to trigger a new automated commit (in days)"
+    default: "50"
+    required: false
+  github_token:
+    description: "GitHub access token with `contents: write` permission."
+    default: ${{ github.token }}
+    required: false
+
+runs:
+  using: "composite"
+  
+  steps:
+    - name: "Checkout Repository"
+      uses: "actions/checkout@v3"
+    
+    - name: "Generate Metadata"
+      id: "metadata"
+      shell: "bash"
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        lastCommitDateISO8601=$(gh api repos/${{ github.repository }}/branches/${{ github.event.repository.default_branch }} --jq '.commit.commit.author.date')
+        lastCommitUnixTimestamp=$(date -d $lastCommitDateISO8601 +%s)
+        
+        currentUnixTimestamp=$(date +%s)
+        
+        maximumTimeElapsedSinceLastCommit=$(( ${{ inputs.days_elapsed }} * 60 * 60 * 24 ))
+        elapsedTimeSinceLastCommit=$(($currentUnixTimestamp-$lastCommitUnixTimestamp))
+        
+        if (( $elapsedTimeSinceLastCommit > $maximumTimeElapsedSinceLastCommit )); then 
+          repositoryStatus="inactive"
+        else
+          repositoryStatus="active"
+        fi
+        
+        echo "repositoryStatus=$repositoryStatus" >> "$GITHUB_OUTPUT"
+    - name: Reactivate Repository
+      if: ${{ steps.metadata.outputs.repositoryStatus == 'inactive' }}
+      shell: "bash"
+      run: |
+          git config --global user.name "${{ inputs.committer_username }}"
+          git config --global user.email "${{ inputs.committer_email }}"
+          git remote set-url origin https://x-access-token:${{ inputs.github_token }}@github.com/$GITHUB_REPOSITORY
+          git commit --allow-empty -s -m "${{ inputs.commit_message }}"
+          git push
